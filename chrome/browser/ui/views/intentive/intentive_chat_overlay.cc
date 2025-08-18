@@ -1,5 +1,6 @@
 #include "chrome/browser/ui/views/intentive/intentive_chat_overlay.h"
 
+#include "base/memory/weak_ptr.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/views/controls/webview/webview.h"
@@ -17,21 +18,45 @@ constexpr int kPadding = 16;
 // static
 views::Widget* IntentiveChatOverlay::ShowOrToggle(views::View* parent_view,
                                                   content::BrowserContext* context) {
-  // For true toggling, store a per-window Widget* somewhere (e.g., BrowserView).
+  // Check if there's already an existing widget for this parent view
+  views::Widget* existing_widget = nullptr;
+  auto widgets = views::Widget::GetAllOwnedWidgets(
+      parent_view->GetWidget()->GetNativeView());
+  
+  for (views::Widget* widget : widgets) {
+    if (widget && widget->GetName() == "IntentiveChatOverlay") {
+      existing_widget = widget;
+      break;
+    }
+  }
+
+  if (existing_widget) {
+    // Toggle visibility
+    if (existing_widget->IsVisible()) {
+      existing_widget->Hide();
+    } else {
+      existing_widget->Show();
+    }
+    return existing_widget;
+  }
+
+  // No existing widget, create a new one
   auto* overlay = new IntentiveChatOverlay(context);
-
   auto* widget = new views::Widget();
+  
   views::Widget::InitParams params(
-      views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET,  // Ownership
-      views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);     // Type
+      views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET,
+      views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
   params.name = "IntentiveChatOverlay";
-  params.delegate = nullptr;  // we'll SetContentsView(...) instead
-  params.parent = parent_view->GetWidget()->GetNativeView(); // overlay above contents
+  params.delegate = nullptr;
+  params.parent = parent_view->GetWidget()->GetNativeView();
+  params.opacity = views::Widget::InitParams::WindowOpacity::kTranslucent;
   widget->Init(std::move(params));
+  
+  widget->SetContentsView(overlay);
+  overlay->widget_ = widget->GetWeakPtr();
 
-  widget->SetContentsView(overlay);  // widget now owns |overlay|
-
-  // Position bottom-right within the parent content area.
+  // Position bottom-right within the parent content area
   const gfx::Rect pb = parent_view->GetBoundsInScreen();
   widget->SetBounds({pb.right() - kW - kPadding,
                      pb.bottom() - kH - kPadding,
