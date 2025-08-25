@@ -59,6 +59,7 @@ component("views") {
 
   deps += [
     "//chrome/common/intentive:intentive_common",
+    "//chrome/browser/ui/views/intentive:intentive_views"
   ]
 }
 

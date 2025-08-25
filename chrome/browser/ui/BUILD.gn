@@ -5314,6 +5314,10 @@ static_library("ui") {
     ]
   }
 
+  sources += [
+    "views/intentive/intentive_sidebar_view.cc",
+  ]
+
   if (enable_reporting) {
     deps += [ "//components/tpcd/enterprise_reporting" ]
   }

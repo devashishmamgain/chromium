@@ -1,13 +1,21 @@
+# chrome/browser/ui/views/intentive/BUILD.gn
 source_set("intentive_views") {
   sources = [
     "intentive_chat_overlay.cc",
-    "intentive_chat_overlay.h",
+    "intentive_sidebar_view.cc",
   ]
+
   deps = [
     "//base",
-    "//content/public/browser",
+    "//content/public/browser",        # for WebView/browser context
+    "//ui/base",
+    "//ui/gfx",
     "//ui/views",
+    "//ui/views/controls/webview",     # views::WebView in chat overlay
     "//url",
+    "//content/public/browser",
+    "//content/public/common"
   ]
+
   visibility = [ "//chrome/browser/ui/views:*" ]
 }

@@ -4,13 +4,13 @@
 
 #include "chrome/browser/ui/views/frame/browser_view.h"
 
-#include <stdint.h>
-
 #include <algorithm>
 #include <memory>
 #include <optional>
 #include <set>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "base/byte_count.h"
 #include "base/check.h"
@@ -307,6 +307,13 @@
 #include "ui/views/window/dialog_delegate.h"
 #include "ui/views/window/hit_test_utils.h"
 
+
+#include "chrome/browser/ui/browser_navigator_params.h"
+#include "ui/base/page_transition_types.h"
+#include "chrome/browser/ui/views/intentive/intentive_sidebar_view.h"
+
+
+
 #if BUILDFLAG(IS_CHROMEOS)
 #include "ash/constants/ash_switches.h"
 #include "ash/public/cpp/accelerators.h"
@@ -366,6 +373,7 @@
 #include "chrome/browser/glic/widget/glic_widget.h"
 #include "chrome/browser/glic/widget/glic_window_controller.h"
 #endif
+
 
 using base::UserMetricsAction;
 using content::WebContents;
@@ -1050,6 +1058,40 @@ BrowserView::BrowserView(std::unique_ptr<Browser> browser)
   find_bar_host_view_ = AddChildView(std::make_unique<View>());
 
   window_scrim_view_ = AddChildView(std::make_unique<ScrimView>());
+
+
+  auto nav_cb = base::BindRepeating(
+    [](Browser* browser, const GURL& url) {
+      if (!browser)
+        return;
+      NavigateParams params(browser, url, ui::PAGE_TRANSITION_LINK);
+      params.disposition = WindowOpenDisposition::CURRENT_TAB;
+      Navigate(&params);
+    },
+    //browser());  // capture the Browser* for this view
+    this->browser()
+  );
+
+  intentive_sidebar_view_ = AddChildView(
+      std::make_unique<IntentiveSidebarView>(nav_cb, /*width_dip=*/64));
+  intentive_sidebar_view_->SetVisible(true);
+
+
+  // intentive_sidebar_view_ = AddChildView(std::make_unique<IntentiveSidebarView>(
+  //     browser_.get(),
+  //     /*width_dip=*/64));
+
+  // Set initial apps for the sidebar
+  intentive_sidebar_view_->SetApps({
+      {"Gmail",    GURL("https://mail.google.com/"), 0},
+      {"Calendar", GURL("https://calendar.google.com/"), 0},
+      {"ChatGPT",  GURL("https://chatgpt.com/"), 0},
+      {"Slack",    GURL("https://app.slack.com/"), 0},
+  });
+
+  intentive_sidebar_view_->SetBackground(
+    views::CreateSolidBackground(SkColorSetARGB(200, 30, 30, 30)));
+  
   window_scrim_view_->layer()->SetName("WindowScrimView");
 
 #if BUILDFLAG(IS_WIN)
@@ -1323,6 +1365,16 @@ bool BrowserView::GetGuestSession() const {
 bool BrowserView::GetRegularOrGuestSession() const {
   return profiles::IsRegularOrGuestSession(browser_.get());
 }
+
+void BrowserView::ToggleIntentiveSidebar() {
+  if (!intentive_sidebar_view_) {
+    return;
+  }
+  intentive_sidebar_view_->SetVisible(!intentive_sidebar_view_->GetVisible());
+  InvalidateLayout();                     // mark for relayout
+  if (auto* w = GetWidget()) w->LayoutRootViewIfNecessary();  // force now
+}
+
 
 bool BrowserView::GetAccelerator(int cmd_id,
                                  ui::Accelerator* accelerator) const {
@@ -5043,7 +5095,7 @@ gfx::Size BrowserView::GetMinimumSize() const {
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserView, views::View overrides:
 
-void BrowserView::Layout(PassKey) {
+void BrowserView::Layout(PassKey pass_key) {
   TRACE_EVENT0("ui", "BrowserView::Layout");
   if (!initialized_ || in_process_fullscreen_) {
     return;
@@ -5087,6 +5139,42 @@ void BrowserView::Layout(PassKey) {
     user_education->help_bubble_factory_registry().NotifyAnchorBoundsChanged(
         GetElementContext());
   }
+
+
+  // const gfx::Rect client = GetLocalBounds();
+  // const int top = contents_container_->y();
+  // const int height = client.bottom() - top;
+
+  //int x = 0;
+
+  // if (intentive_sidebar_view_ && intentive_sidebar_view_->GetVisible()) {
+  //   const int w = intentive_sidebar_view_->dock_width_dip();
+  //   const gfx::Rect dock_bounds(x, top, w, height);
+  //   if (intentive_sidebar_view_->bounds() != dock_bounds) {
+  //     intentive_sidebar_view_->SetBoundsRect(dock_bounds);
+  //   }
+  //   x += w;
+  // }
+
+  if (intentive_sidebar_view_ && intentive_sidebar_view_->GetVisible() &&
+    contents_container_) {
+    const int w = intentive_sidebar_view_->dock_width_dip();
+
+    // Sidebar hugs the left of the content area.
+    gfx::Rect content_bounds = contents_container_->bounds();
+    gfx::Rect sidebar_bounds = content_bounds;
+    sidebar_bounds.set_width(w);
+    intentive_sidebar_view_->SetBoundsRect(sidebar_bounds);
+
+    // Shrink content to the right of the sidebar.
+    content_bounds.Inset(gfx::Insets::TLBR(0, w, 0, 0));
+    contents_container_->SetBoundsRect(content_bounds);
+  }
+
+  // ... rest of the code remains the same ...
+  //   // contents_container_ in InitViews(), its z-order should already be fine.
+  // }
+
 }
 
 void BrowserView::OnGestureEvent(ui::GestureEvent* event) {
@@ -5320,6 +5408,13 @@ void BrowserView::OnDragEntered(const ui::DropTargetEvent& event) {
 
 bool BrowserView::AcceleratorPressed(const ui::Accelerator& accelerator) {
   int command_id;
+
+  if (accelerator.key_code() == ui::VKEY_L &&
+      accelerator.modifiers() == (ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN)) {
+    ToggleIntentiveSidebar();
+    return true;
+  }
+
   // Though AcceleratorManager should not send unknown |accelerator| to us, it's
   // still possible the command cannot be executed now.
   if (!FindCommandIdForAccelerator(accelerator, &command_id)) {
@@ -5914,6 +6009,7 @@ void BrowserView::MaybeShowSupervisedUserProfileSignInIPH() {
 }
 
 void BrowserView::ShowHatsDialog(
+   
     const std::string& site_id,
     const std::optional<std::string>& hats_histogram_name,
     const std::optional<uint64_t> hats_survey_ukm_id,
