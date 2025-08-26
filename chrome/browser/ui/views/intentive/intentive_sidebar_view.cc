@@ -17,47 +17,8 @@
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
 
-// IMPORTANT: two-argument form here too.
 BEGIN_METADATA(IntentiveSidebarView)
-//BEGIN_METADATA(IntentiveSidebarView, views::View)
 END_METADATA
-
-// namespace {
-// }
-
-// void NavigateUsingBrowser(Browser* browser, const GURL& url) {
-//   if (!browser) {
-//     return;
-//   }
-//   // NavigateParams params(browser, url, ui::PAGE_TRANSITION_LINK);
-//   // params.disposition = WindowOpenDisposition::CURRENT_TAB;
-//   // Navigate(&params);
-//   content::OpenURLParams params(
-//           url, content::Referrer(), WindowOpenDisposition::CURRENT_TAB,
-//           ui::PAGE_TRANSITION_LINK, /*is_renderer_initiated=*/false);
-//   params.user_gesture = true;
-//   browser->OpenURL(params);
-// }
-
-// }  // namespace
-
-// IntentiveSidebarView::IntentiveSidebarView(Browser* browser, int width_dip)
-//     : browser_(browser),
-//       navigation_callback_(base::BindRepeating(&NavigateUsingBrowser, browser)),
-//       width_dip_(width_dip) {
-//   InitializeView();
-// }
-
-// IntentiveSidebarView::IntentiveSidebarView(NavigationCallback navigation_callback, int width_dip)
-//     : navigation_callback_(std::move(navigation_callback)),
-//       width_dip_(width_dip) {
-//   InitializeView();
-// }
-
-// IntentiveSidebarView::IntentiveSidebarView(Browser* browser, int width_dip)
-//     : browser_(browser), width_dip_(width_dip) {
-//    InitializeView();
-// }
 
 IntentiveSidebarView::IntentiveSidebarView(
   NavigationCallback navigation_callback, int width_dip)
