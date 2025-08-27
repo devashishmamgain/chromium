@@ -1076,11 +1076,6 @@ BrowserView::BrowserView(std::unique_ptr<Browser> browser)
       std::make_unique<IntentiveSidebarView>(nav_cb, /*width_dip=*/64));
   intentive_sidebar_view_->SetVisible(true);
 
-
-  // intentive_sidebar_view_ = AddChildView(std::make_unique<IntentiveSidebarView>(
-  //     browser_.get(),
-  //     /*width_dip=*/64));
-
   // Set initial apps for the sidebar
   intentive_sidebar_view_->SetApps({
       {"Gmail",    GURL("https://mail.google.com/"), 0},
@@ -5140,36 +5135,7 @@ void BrowserView::Layout(PassKey pass_key) {
         GetElementContext());
   }
 
-
-  // const gfx::Rect client = GetLocalBounds();
-  // const int top = contents_container_->y();
-  // const int height = client.bottom() - top;
-
-  //int x = 0;
-
-  // if (intentive_sidebar_view_ && intentive_sidebar_view_->GetVisible()) {
-  //   const int w = intentive_sidebar_view_->dock_width_dip();
-  //   const gfx::Rect dock_bounds(x, top, w, height);
-  //   if (intentive_sidebar_view_->bounds() != dock_bounds) {
-  //     intentive_sidebar_view_->SetBoundsRect(dock_bounds);
-  //   }
-  //   x += w;
-  // }
-
-  if (intentive_sidebar_view_ && intentive_sidebar_view_->GetVisible() &&
-    contents_container_) {
-    const int w = intentive_sidebar_view_->dock_width_dip();
-
-    // Sidebar hugs the left of the content area.
-    gfx::Rect content_bounds = contents_container_->bounds();
-    gfx::Rect sidebar_bounds = content_bounds;
-    sidebar_bounds.set_width(w);
-    intentive_sidebar_view_->SetBoundsRect(sidebar_bounds);
-
-    // Shrink content to the right of the sidebar.
-    content_bounds.Inset(gfx::Insets::TLBR(0, w, 0, 0));
-    contents_container_->SetBoundsRect(content_bounds);
-  }
+  // Left sidebar is now laid out by BrowserViewLayout.
 
   // ... rest of the code remains the same ...
   //   // contents_container_ in InitViews(), its z-order should already be fine.
@@ -5291,6 +5257,8 @@ void BrowserView::AddedToWidget() {
           left_aligned_side_panel_separator_, unified_side_panel_,
           right_aligned_side_panel_separator_, side_panel_rounded_corner_,
           contents_separator_));
+  // Inform the layout of the left sidebar so it can reserve space for it.
+  browser_view_layout->set_intentive_sidebar_view(intentive_sidebar_view_);
   browser_view_layout->SetUseBrowserContentMinimumSize(
       ShouldUseBrowserContentMinimumSize());
 

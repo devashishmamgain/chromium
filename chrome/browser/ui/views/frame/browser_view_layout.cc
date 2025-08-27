@@ -93,6 +93,9 @@ struct BrowserViewLayout::ContentsContainerLayoutResult {
   bool side_panel_right_aligned;
   bool contents_container_after_side_panel;
   gfx::Rect separator_bounds;
+  // Intentive sidebar output.
+  gfx::Rect intentive_sidebar_bounds;
+  bool intentive_sidebar_visible = false;
 };
 
 class BrowserViewLayout::WebContentsModalDialogHostViews
@@ -704,6 +707,20 @@ BrowserViewLayout::CalculateContentsContainerLayout(
                                         vertical_tab_offset);
   }
 
+  // Intentive: reserve space for the left sidebar if present and visible.
+  gfx::Rect intentive_sidebar_bounds;
+  bool intentive_sidebar_visible = false;
+  if (intentive_sidebar_view_ && intentive_sidebar_view_->GetVisible()) {
+    const int sidebar_width =
+        intentive_sidebar_view_->GetPreferredSize().width();
+    // Sidebar is placed at the leading edge of the contents area (LTR: left).
+    intentive_sidebar_bounds = contents_container_bounds;
+    intentive_sidebar_bounds.set_width(sidebar_width);
+    // Shrink and shift the contents area to the right of the sidebar.
+    contents_container_bounds.Inset(gfx::Insets::TLBR(0, sidebar_width, 0, 0));
+    intentive_sidebar_visible = true;
+  }
+
   if (webui_tab_strip_ && webui_tab_strip_->GetVisible()) {
     // The WebUI tab strip container should "push" the tab contents down without
     // resizing it.
@@ -720,7 +737,9 @@ BrowserViewLayout::CalculateContentsContainerLayout(
                                          false,
                                          false,
                                          false,
-                                         gfx::Rect()};
+                                         gfx::Rect(),
+                                         intentive_sidebar_bounds,
+                                         intentive_sidebar_visible};
   }
 
   SidePanel* side_panel = views::AsViewClass<SidePanel>(unified_side_panel_);
@@ -807,7 +826,9 @@ BrowserViewLayout::CalculateContentsContainerLayout(
       side_panel_visible,
       side_panel_right_aligned,
       contents_container_after_side_panel,
-      separator_bounds};
+      separator_bounds,
+      intentive_sidebar_bounds,
+      intentive_sidebar_visible};
 }
 
 void BrowserViewLayout::LayoutContentsContainerView(
@@ -824,6 +845,16 @@ void BrowserViewLayout::LayoutContentsContainerView(
     UpdateSplitViewInsets();
   }
   contents_container_->SetBoundsRect(layout_result.contents_container_bounds);
+
+  // Intentive: position the left sidebar if present.
+  if (intentive_sidebar_view_) {
+    SetViewVisibility(intentive_sidebar_view_,
+                      layout_result.intentive_sidebar_visible);
+    if (layout_result.intentive_sidebar_visible) {
+      intentive_sidebar_view_->SetBoundsRect(
+          layout_result.intentive_sidebar_bounds);
+    }
+  }
 
   if (unified_side_panel_) {
     unified_side_panel_->SetBoundsRect(layout_result.side_panel_bounds);

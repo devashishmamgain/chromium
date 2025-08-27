@@ -84,6 +84,13 @@ class BrowserViewLayout : public views::LayoutManager {
 
   web_modal::WebContentsModalDialogHost* GetWebContentsModalDialogHost();
 
+  // Intentive: expose the optional left sidebar view so the layout can
+  // account for its width and position it without ad-hoc resizing elsewhere.
+  void set_intentive_sidebar_view(views::View* view) {
+    intentive_sidebar_view_ = view;
+    InvalidateLayout();
+  }
+
   // views::LayoutManager overrides:
   void Layout(views::View* host) override;
   gfx::Size GetMinimumSize(const views::View* host) const override;
@@ -185,6 +192,9 @@ class BrowserViewLayout : public views::LayoutManager {
 
   // Whether or not to use the browser based content minimum size.
   bool use_browser_content_minimum_size_ = false;
+
+  // Intentive: optional left sidebar view docked to the content area.
+  raw_ptr<views::View> intentive_sidebar_view_ = nullptr;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_FRAME_BROWSER_VIEW_LAYOUT_H_
