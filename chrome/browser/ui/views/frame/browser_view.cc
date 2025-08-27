@@ -249,6 +249,7 @@
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/navigation_controller.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/drop_data.h"
 #include "extensions/common/command.h"
@@ -1101,6 +1102,11 @@ BrowserView::BrowserView(std::unique_ptr<Browser> browser)
           }
         }
         if (found_index >= 0) {
+          content::WebContents* wc = model->GetWebContentsAt(found_index);
+          // If the renderer had crashed while backgrounded, reload it.
+          if (wc && wc->IsCrashed()) {
+            wc->GetController().Reload(content::ReloadType::NORMAL, true);
+          }
           model->ActivateTabAt(found_index);
         } else {
           NavigateParams params(browser, target_url, ui::PAGE_TRANSITION_LINK);
