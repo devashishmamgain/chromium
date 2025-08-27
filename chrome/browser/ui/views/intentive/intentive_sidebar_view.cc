@@ -12,7 +12,10 @@
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/views/controls/button/label_button.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/layout/box_layout.h"
+ 
 
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
@@ -45,6 +48,19 @@ void IntentiveSidebarView::InitializeView() {
   rail_layout->set_inside_border_insets(gfx::Insets::TLBR(8, 8, 8, 8));
   rail_layout->set_between_child_spacing(8);
 
+  // Container that will hold the app buttons (kept separate so the + button
+  // stays while we rebuild the list).
+  apps_container_ = rail_->AddChildView(std::make_unique<views::View>());
+  apps_container_->SetLayoutManager(std::make_unique<views::BoxLayout>(
+      views::BoxLayout::Orientation::kVertical));
+
+  // Add button to append new app entries.
+  add_button_ = rail_->AddChildView(std::make_unique<views::LabelButton>(
+      base::BindRepeating(&IntentiveSidebarView::OnAddPressed,
+                          base::Unretained(this)),
+      u"+"));
+  add_button_->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+
   content_container_ = AddChildView(std::make_unique<views::View>());
 }
 
@@ -65,16 +81,17 @@ gfx::Size IntentiveSidebarView::CalculatePreferredSize(
 }
 
 void IntentiveSidebarView::Rebuild() {
-  // Remove existing children in the rail.
+  // Clear and rebuild just the apps container, preserving the + button.
+  if (!apps_container_)
+    return;
   std::vector<views::View*> to_remove;
-  for (views::View* child : rail_->children())
+  for (views::View* child : apps_container_->children())
     to_remove.push_back(child);
   for (views::View* v : to_remove)
-    rail_->RemoveChildViewT(v);
+    apps_container_->RemoveChildViewT(v);
 
-  // Add one simple text button per app for now.
   for (const auto& app : apps_) {
-    auto* btn = rail_->AddChildView(std::make_unique<views::LabelButton>(
+    auto* btn = apps_container_->AddChildView(std::make_unique<views::LabelButton>(
         base::BindRepeating(&IntentiveSidebarView::OnAppPressed,
                             base::Unretained(this), app),
         base::UTF8ToUTF16(app.name)));
@@ -88,4 +105,68 @@ void IntentiveSidebarView::Rebuild() {
 void IntentiveSidebarView::OnAppPressed(const IntentiveAppEntry& entry) {
   if (navigation_callback_)
     navigation_callback_.Run(entry.url);
+}
+
+void IntentiveSidebarView::OnAddPressed() {
+  if (add_form_container_)
+    return;  // Already open.
+  size_t insert_index = rail_->GetIndexOf(add_button_).value_or(rail_->children().size());
+  add_form_container_ = rail_->AddChildViewAt(std::make_unique<views::View>(),
+                                              insert_index);
+  auto* layout = add_form_container_->SetLayoutManager(
+      std::make_unique<views::BoxLayout>(views::BoxLayout::Orientation::kVertical));
+  layout->set_between_child_spacing(6);
+
+  add_form_container_->AddChildView(std::make_unique<views::Label>(u"Add App"));
+  name_field_ = add_form_container_->AddChildView(std::make_unique<views::Textfield>());
+  name_field_->SetPlaceholderText(u"Name");
+  url_field_ = add_form_container_->AddChildView(std::make_unique<views::Textfield>());
+  url_field_->SetPlaceholderText(u"https://example.com");
+
+  auto* actions = add_form_container_->AddChildView(std::make_unique<views::View>());
+  auto* actions_layout = actions->SetLayoutManager(std::make_unique<views::BoxLayout>(
+      views::BoxLayout::Orientation::kHorizontal));
+  actions_layout->set_between_child_spacing(8);
+  actions->AddChildView(std::make_unique<views::LabelButton>(
+      base::BindRepeating(&IntentiveSidebarView::OnAddFormAccept,
+                          base::Unretained(this)),
+      u"Add"));
+  actions->AddChildView(std::make_unique<views::LabelButton>(
+      base::BindRepeating(&IntentiveSidebarView::OnAddFormCancel,
+                          base::Unretained(this)),
+      u"Cancel"));
+  InvalidateLayout();
+  SchedulePaint();
+}
+
+void IntentiveSidebarView::OnAddFormAccept() {
+  std::string name_utf8 = base::UTF16ToUTF8(name_field_->GetText());
+  std::string url_utf8 = base::UTF16ToUTF8(url_field_->GetText());
+  if (url_utf8.empty())
+    return;
+  if (url_utf8.find("://") == std::string::npos)
+    url_utf8 = std::string("https://") + url_utf8;
+  GURL url(url_utf8);
+  if (!url.is_valid())
+    return;
+  if (name_utf8.empty())
+    name_utf8 = url.host();
+  apps_.push_back(IntentiveAppEntry{std::move(name_utf8), std::move(url), 0});
+  // Tear down form.
+  rail_->RemoveChildViewT(add_form_container_);
+  add_form_container_ = nullptr;
+  name_field_ = nullptr;
+  url_field_ = nullptr;
+  Rebuild();
+}
+
+void IntentiveSidebarView::OnAddFormCancel() {
+  if (!add_form_container_)
+    return;
+  rail_->RemoveChildViewT(add_form_container_);
+  add_form_container_ = nullptr;
+  name_field_ = nullptr;
+  url_field_ = nullptr;
+  InvalidateLayout();
+  SchedulePaint();
 }
