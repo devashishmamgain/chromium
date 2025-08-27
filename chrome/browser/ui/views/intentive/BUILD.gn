@@ -2,7 +2,6 @@
 source_set("intentive_views") {
   sources = [
     "intentive_chat_overlay.cc",
-    "intentive_sidebar_view.cc",
   ]
 
   deps = [

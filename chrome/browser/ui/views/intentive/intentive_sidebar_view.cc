@@ -86,7 +86,6 @@ void IntentiveSidebarView::Rebuild() {
 }
 
 void IntentiveSidebarView::OnAppPressed(const IntentiveAppEntry& entry) {
-  if (navigation_callback_) {
+  if (navigation_callback_)
     navigation_callback_.Run(entry.url);
-  }
 }

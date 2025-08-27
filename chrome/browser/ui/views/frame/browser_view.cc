@@ -1061,16 +1061,54 @@ BrowserView::BrowserView(std::unique_ptr<Browser> browser)
 
 
   auto nav_cb = base::BindRepeating(
-    [](Browser* browser, const GURL& url) {
-      if (!browser)
-        return;
-      NavigateParams params(browser, url, ui::PAGE_TRANSITION_LINK);
-      params.disposition = WindowOpenDisposition::CURRENT_TAB;
-      Navigate(&params);
-    },
-    //browser());  // capture the Browser* for this view
-    this->browser()
-  );
+      [](Browser* browser, const GURL& target_url) {
+        if (!browser)
+          return;
+        TabStripModel* model = browser->tab_strip_model();
+        int found_index = -1;
+
+        auto hosts_match = [](const std::string& a, const std::string& b) {
+          if (a == b)
+            return true;
+          // Treat Slack subdomains as equivalent so we don't open new tabs
+          // when redirecting between app.slack.com and workspace.slack.com.
+          auto ends_with = [](const std::string& s, const std::string& suffix) {
+            return s.size() >= suffix.size() &&
+                   s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+          };
+          const char kSlackSuffix[] = ".slack.com";
+          if (ends_with(a, kSlackSuffix) && (ends_with(b, kSlackSuffix) || b == "slack.com"))
+            return true;
+          if (ends_with(b, kSlackSuffix) && (ends_with(a, kSlackSuffix) || a == "slack.com"))
+            return true;
+          return false;
+        };
+
+        for (int i = 0; i < model->count(); ++i) {
+          content::WebContents* wc = model->GetWebContentsAt(i);
+          const GURL& last = wc->GetLastCommittedURL();
+          const GURL& visible = wc->GetVisibleURL();
+          const GURL& cur = last.is_valid() ? last : visible;
+          if (cur.SchemeIsHTTPOrHTTPS() && target_url.SchemeIsHTTPOrHTTPS()) {
+            if (hosts_match(std::string(cur.host_piece()),
+                            std::string(target_url.host_piece()))) {
+              found_index = i;
+              break;
+            }
+          } else if (cur == target_url) {
+            found_index = i;
+            break;
+          }
+        }
+        if (found_index >= 0) {
+          model->ActivateTabAt(found_index);
+        } else {
+          NavigateParams params(browser, target_url, ui::PAGE_TRANSITION_LINK);
+          params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+          Navigate(&params);
+        }
+      },
+      browser_.get());
 
   intentive_sidebar_view_ = AddChildView(
       std::make_unique<IntentiveSidebarView>(nav_cb, /*width_dip=*/64));
