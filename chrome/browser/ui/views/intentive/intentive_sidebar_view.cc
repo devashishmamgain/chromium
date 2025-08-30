@@ -27,6 +27,15 @@
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/window/dialog_delegate.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/base/models/image_model.h"
+#include "components/vector_icons/vector_icons.h"
+
+// Favicon fetching
+#include "base/task/cancelable_task_tracker.h"
+#include "chrome/browser/favicon/favicon_service_factory.h"
+#include "chrome/browser/favicon/favicon_utils.h"
+#include "components/favicon/core/favicon_service.h"
+#include "components/keyed_service/core/service_access_type.h"
 
 namespace {
 class AddAppDialog : public views::DialogDelegate {
@@ -86,8 +95,7 @@ class AddAppDialog : public views::DialogDelegate {
   AcceptCallback on_accept_;
 };
 }  // namespace
-#include "ui/base/models/image_model.h"
-#include "components/vector_icons/vector_icons.h"
+// keep includes above grouped logically
 
 
 #include "ui/base/page_transition_types.h"
@@ -100,11 +108,13 @@ IntentiveSidebarView::IntentiveSidebarView(
   NavigationCallback navigation_callback, int width_dip)
   : navigation_callback_(std::move(navigation_callback)),
     width_dip_(width_dip) {
+  favicon_task_tracker_ = std::make_unique<base::CancelableTaskTracker>();
   InitializeView();
 }
 
 IntentiveSidebarView::IntentiveSidebarView(Browser* browser, int width_dip)
     : browser_(browser), width_dip_(width_dip) {
+  favicon_task_tracker_ = std::make_unique<base::CancelableTaskTracker>();
   InitializeView();
 }
 
@@ -190,6 +200,9 @@ void IntentiveSidebarView::Rebuild() {
   // Clear and rebuild just the apps container, preserving the + button.
   if (!apps_container_)
     return;
+  // Cancel any in-flight favicon requests before destroying buttons.
+  if (favicon_task_tracker_)
+    favicon_task_tracker_->TryCancelAll();
   std::vector<views::View*> to_remove;
   for (views::View* child : apps_container_->children())
     to_remove.push_back(child);
@@ -205,6 +218,11 @@ void IntentiveSidebarView::Rebuild() {
     btn->SetTooltipText(base::UTF8ToUTF16(app.url.spec()));
     btn->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     btn->SetBorder(views::CreateEmptyBorder(gfx::Insets::TLBR(8, 10, 8, 10)));
+    // Set a default favicon first, then fetch real one asynchronously.
+    btn->SetImageLabelSpacing(8);
+    btn->SetImageModel(views::Button::STATE_NORMAL,
+                       favicon::GetDefaultFaviconModel());
+    LoadButtonIconForUrl(btn, app.url);
     const bool selected = static_cast<int>(i) == selected_index_;
     const SkColor bg = selected ? SkColorSetARGB(40, 255, 255, 255)
                                 : SK_ColorTRANSPARENT;
@@ -254,4 +272,31 @@ void IntentiveSidebarView::OnAppAdded(std::string name, GURL url) {
   Rebuild();
 }
 
-// (No longer used)
+void IntentiveSidebarView::LoadButtonIconForUrl(views::LabelButton* button,
+                                                const GURL& url) {
+  if (!button)
+    return;
+  if (!browser_ || !browser_->profile())
+    return;
+
+  favicon::FaviconService* favicon_service =
+      FaviconServiceFactory::GetForProfile(browser_->profile(),
+                                           ServiceAccessType::EXPLICIT_ACCESS);
+  if (!favicon_service)
+    return;
+
+  favicon_service->GetFaviconImageForPageURL(
+      url,
+      base::BindOnce(
+          [](views::LabelButton* target,
+             const favicon_base::FaviconImageResult& result) {
+            if (!target)
+              return;
+            if (!result.image.IsEmpty()) {
+              target->SetImageModel(views::Button::STATE_NORMAL,
+                                    ui::ImageModel::FromImage(result.image));
+            }
+          },
+          base::Unretained(button)),
+      favicon_task_tracker_.get());
+}

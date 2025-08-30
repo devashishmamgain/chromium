@@ -8,6 +8,7 @@
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/views/view.h"
 #include "url/gurl.h"
+#include <memory>
 
 class PrefService;
 
@@ -15,6 +16,10 @@ namespace views {
 class Textfield;
 class LabelButton;
 class ScrollView;
+}
+
+namespace base {
+class CancelableTaskTracker;
 }
 
 struct IntentiveAppEntry {
@@ -51,6 +56,7 @@ class IntentiveSidebarView : public views::View {
     void OnAppPressed(const IntentiveAppEntry& entry);
     void OnAddPressed();
     void OnAppAdded(std::string name, GURL url);
+    void LoadButtonIconForUrl(views::LabelButton* button, const GURL& url);
 
     raw_ptr<Browser> browser_ = nullptr;
     NavigationCallback navigation_callback_;
@@ -65,6 +71,8 @@ class IntentiveSidebarView : public views::View {
     raw_ptr<views::View> content_container_ = nullptr;
 
     int selected_index_ = -1;
+
+    std::unique_ptr<base::CancelableTaskTracker> favicon_task_tracker_;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_INTENTIVE_INTENTIVE_SIDEBAR_VIEW_H_
