@@ -178,10 +178,16 @@ void IntentiveSidebarView::InitializeView() {
   auto* add_btn = rail_->AddChildView(std::make_unique<views::ImageButton>(
       base::BindRepeating(&IntentiveSidebarView::OnAddPressed,
                           base::Unretained(this))));
-  add_btn->SetImageModel(views::Button::STATE_NORMAL,
-                         ui::ImageModel::FromVectorIcon(vector_icons::kAddIcon));
+  // Match app icon sizing and alignment.
+  add_btn->SetImageModel(
+      views::Button::STATE_NORMAL,
+      ui::ImageModel::FromVectorIcon(vector_icons::kAddIcon,
+                                     ui::kColorMenuIcon, kAppIconSizeDip));
+  add_btn->SetImageHorizontalAlignment(views::ImageButton::ALIGN_CENTER);
+  add_btn->SetImageVerticalAlignment(views::ImageButton::ALIGN_MIDDLE);
+  add_btn->SetMinimumImageSize(gfx::Size(kAppIconSizeDip, kAppIconSizeDip));
+  add_btn->SetPreferredSize(gfx::Size(kAppRowMinHeightDip, kAppRowMinHeightDip));
   add_btn->SetTooltipText(u"Add app");
-  add_btn->SetPreferredSize(gfx::Size(28, 28));
   add_button_ = nullptr; // not used for ImageButton, keep member for layout index
 
   content_container_ = AddChildView(std::make_unique<views::View>());
