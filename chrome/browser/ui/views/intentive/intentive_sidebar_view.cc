@@ -36,6 +36,8 @@
 #include "chrome/browser/favicon/favicon_utils.h"
 #include "components/favicon/core/favicon_service.h"
 #include "components/keyed_service/core/service_access_type.h"
+#include "ui/gfx/image/image_skia_operations.h"
+#include "skia/ext/image_operations.h"
 
 namespace {
 class AddAppDialog : public views::DialogDelegate {
@@ -103,6 +105,11 @@ class AddAppDialog : public views::DialogDelegate {
 
 BEGIN_METADATA(IntentiveSidebarView)
 END_METADATA
+
+namespace {
+constexpr int kAppIconSizeDip = 24;      // Slightly larger than default 16px
+constexpr int kAppRowMinHeightDip = 36;  // Comfortable hit target
+}  // namespace
 
 IntentiveSidebarView::IntentiveSidebarView(
   NavigationCallback navigation_callback, int width_dip)
@@ -218,10 +225,22 @@ void IntentiveSidebarView::Rebuild() {
     btn->SetTooltipText(base::UTF8ToUTF16(app.url.spec()));
     btn->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     btn->SetBorder(views::CreateEmptyBorder(gfx::Insets::TLBR(8, 10, 8, 10)));
-    // Set a default favicon first, then fetch real one asynchronously.
+    btn->SetMinSize(gfx::Size(0, kAppRowMinHeightDip));
     btn->SetImageLabelSpacing(8);
-    btn->SetImageModel(views::Button::STATE_NORMAL,
-                       favicon::GetDefaultFaviconModel());
+    btn->SetImageCentered(true);
+    // Set a default favicon first, then fetch real one asynchronously.
+    gfx::Image default_favicon = favicon::GetDefaultFavicon();
+    const gfx::ImageSkia* default_skia = default_favicon.ToImageSkia();
+    if (default_skia && !default_skia->isNull()) {
+      gfx::ImageSkia resized = gfx::ImageSkiaOperations::CreateResizedImage(
+          *default_skia, skia::ImageOperations::RESIZE_BEST,
+          gfx::Size(kAppIconSizeDip, kAppIconSizeDip));
+      btn->SetImageModel(views::Button::STATE_NORMAL,
+                         ui::ImageModel::FromImageSkia(resized));
+    } else {
+      btn->SetImageModel(views::Button::STATE_NORMAL,
+                         favicon::GetDefaultFaviconModel());
+    }
     LoadButtonIconForUrl(btn, app.url);
     const bool selected = static_cast<int>(i) == selected_index_;
     const SkColor bg = selected ? SkColorSetARGB(40, 255, 255, 255)
@@ -293,8 +312,19 @@ void IntentiveSidebarView::LoadButtonIconForUrl(views::LabelButton* button,
             if (!target)
               return;
             if (!result.image.IsEmpty()) {
-              target->SetImageModel(views::Button::STATE_NORMAL,
-                                    ui::ImageModel::FromImage(result.image));
+              const gfx::ImageSkia* src = result.image.ToImageSkia();
+              if (src && !src->isNull()) {
+                gfx::ImageSkia resized =
+                    gfx::ImageSkiaOperations::CreateResizedImage(
+                        *src, skia::ImageOperations::RESIZE_BEST,
+                        gfx::Size(kAppIconSizeDip, kAppIconSizeDip));
+                target->SetImageModel(views::Button::STATE_NORMAL,
+                                      ui::ImageModel::FromImageSkia(resized));
+              } else {
+                // Fallback to the raw image if resizing isn't possible.
+                target->SetImageModel(views::Button::STATE_NORMAL,
+                                      ui::ImageModel::FromImage(result.image));
+              }
             }
           },
           base::Unretained(button)),
