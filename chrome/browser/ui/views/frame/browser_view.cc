@@ -139,6 +139,7 @@
 #include "chrome/browser/ui/views/frame/vertical_tab_strip_region_view.h"
 #include "chrome/browser/ui/views/frame/web_contents_close_handler.h"
 #include "chrome/browser/ui/views/fullscreen_control/fullscreen_control_host.h"
+#include "chrome/browser/ui/views/intentive/intentive_app_overlay.h"
 #include "chrome/browser/ui/views/global_media_controls/media_toolbar_button_view.h"
 #include "chrome/browser/ui/views/hats/hats_next_web_dialog.h"
 #include "chrome/browser/ui/views/incognito_clear_browsing_data_dialog_coordinator.h"
@@ -1006,6 +1007,10 @@ BrowserView::BrowserView(std::unique_ptr<Browser> browser)
   lens_overlay_view_ =
       contents_container->AddChildView(std::move(lens_overlay_view));
 
+  // Intentive: add an overlay for app WebViews inside the lens overlay layer.
+  intentive_app_overlay_ = lens_overlay_view_->AddChildView(
+      std::make_unique<IntentiveAppOverlay>(browser_->profile()));
+
   contents_container->SetLayoutManager(std::make_unique<ContentsLayoutManager>(
       contents_view, lens_overlay_view_));
 
@@ -1062,63 +1067,19 @@ BrowserView::BrowserView(std::unique_ptr<Browser> browser)
 
 
   auto nav_cb = base::BindRepeating(
-      [](Browser* browser, const GURL& target_url) {
-        if (!browser)
+      [](BrowserView* bv, const GURL& target_url) {
+        if (!bv || !bv->intentive_app_overlay_)
           return;
-        TabStripModel* model = browser->tab_strip_model();
-        int found_index = -1;
-
-        auto hosts_match = [](const std::string& a, const std::string& b) {
-          if (a == b)
-            return true;
-          // Treat Slack subdomains as equivalent so we don't open new tabs
-          // when redirecting between app.slack.com and workspace.slack.com.
-          auto ends_with = [](const std::string& s, const std::string& suffix) {
-            return s.size() >= suffix.size() &&
-                   s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
-          };
-          const char kSlackSuffix[] = ".slack.com";
-          if (ends_with(a, kSlackSuffix) && (ends_with(b, kSlackSuffix) || b == "slack.com"))
-            return true;
-          if (ends_with(b, kSlackSuffix) && (ends_with(a, kSlackSuffix) || a == "slack.com"))
-            return true;
-          return false;
-        };
-
-        for (int i = 0; i < model->count(); ++i) {
-          content::WebContents* wc = model->GetWebContentsAt(i);
-          const GURL& last = wc->GetLastCommittedURL();
-          const GURL& visible = wc->GetVisibleURL();
-          const GURL& cur = last.is_valid() ? last : visible;
-          if (cur.SchemeIsHTTPOrHTTPS() && target_url.SchemeIsHTTPOrHTTPS()) {
-            if (hosts_match(std::string(cur.host_piece()),
-                            std::string(target_url.host_piece()))) {
-              found_index = i;
-              break;
-            }
-          } else if (cur == target_url) {
-            found_index = i;
-            break;
-          }
-        }
-        if (found_index >= 0) {
-          content::WebContents* wc = model->GetWebContentsAt(found_index);
-          // If the renderer had crashed while backgrounded, reload it.
-          if (wc && wc->IsCrashed()) {
-            wc->GetController().Reload(content::ReloadType::NORMAL, true);
-          }
-          model->ActivateTabAt(found_index);
-        } else {
-          NavigateParams params(browser, target_url, ui::PAGE_TRANSITION_LINK);
-          params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
-          Navigate(&params);
-        }
+        // Show the overlay and the requested app view.
+        bv->lens_overlay_view_->SetVisible(true);
+        bv->intentive_app_overlay_->ShowApp(target_url);
       },
-      browser_.get());
+      this);
 
   intentive_sidebar_view_ = AddChildView(
       std::make_unique<IntentiveSidebarView>(nav_cb, /*width_dip=*/64));
   intentive_sidebar_view_->SetVisible(true);
+  intentive_sidebar_view_->SetBrowser(browser_.get());
 
   // Set initial apps for the sidebar
   intentive_sidebar_view_->SetApps({

@@ -927,6 +927,7 @@ class BrowserView : public BrowserWindow,
   void LoadingAnimationCallback(base::TimeTicks timestamp);
 
   base::raw_ptr<IntentiveSidebarView> intentive_sidebar_view_ = nullptr;
+  base::raw_ptr<class IntentiveAppOverlay> intentive_app_overlay_ = nullptr;
 
   void ToggleIntentiveSidebar();
   IntentiveSidebarView* intentive_sidebar_view() { 

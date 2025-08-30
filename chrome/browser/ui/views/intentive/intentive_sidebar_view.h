@@ -9,9 +9,12 @@
 #include "ui/views/view.h"
 #include "url/gurl.h"
 
+class PrefService;
+
 namespace views {
 class Textfield;
 class LabelButton;
+class ScrollView;
 }
 
 struct IntentiveAppEntry {
@@ -35,6 +38,9 @@ class IntentiveSidebarView : public views::View {
     void SetApps(std::vector<IntentiveAppEntry> apps);
     int dock_width_dip() const { return width_dip_; }
 
+    // Optional: provide a Browser to enable prefs and tab selection tracking.
+    void SetBrowser(Browser* browser);
+
     // views::View:
     gfx::Size CalculatePreferredSize(
         const views::SizeBounds& available_size) const override;
@@ -44,8 +50,7 @@ class IntentiveSidebarView : public views::View {
     void Rebuild();
     void OnAppPressed(const IntentiveAppEntry& entry);
     void OnAddPressed();
-    void OnAddFormAccept();
-    void OnAddFormCancel();
+    void OnAppAdded(std::string name, GURL url);
 
     raw_ptr<Browser> browser_ = nullptr;
     NavigationCallback navigation_callback_;
@@ -54,14 +59,12 @@ class IntentiveSidebarView : public views::View {
     std::vector<IntentiveAppEntry> apps_;
 
     raw_ptr<views::View> rail_ = nullptr;
+    raw_ptr<views::ScrollView> apps_scroll_ = nullptr;
     raw_ptr<views::View> apps_container_ = nullptr;
     raw_ptr<views::LabelButton> add_button_ = nullptr;
     raw_ptr<views::View> content_container_ = nullptr;
 
-    // Inline add form state.
-    raw_ptr<views::View> add_form_container_ = nullptr;
-    raw_ptr<views::Textfield> name_field_ = nullptr;
-    raw_ptr<views::Textfield> url_field_ = nullptr;
+    int selected_index_ = -1;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_INTENTIVE_INTENTIVE_SIDEBAR_VIEW_H_
