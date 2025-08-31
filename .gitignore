@@ -353,3 +353,4 @@ third_party/rust/target/
 # local keys
 .gitkey*
 gitkey*
+Chromium-mac.zip

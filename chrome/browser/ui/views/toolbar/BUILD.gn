@@ -68,10 +68,8 @@ source_set("toolbar") {
     "toolbar_view.h",
   ]
 
-  sources += [
-    "../intentive/intentive_chat_overlay.cc",
-    "../intentive/intentive_chat_overlay.h",
-  ]
+  # Use the Intentive overlay from the intentive_views source set to avoid
+  # duplicate symbols. Added to deps list below.
   
   public_deps = [
     "//base",
@@ -103,6 +101,7 @@ source_set("toolbar") {
     "//url",
   ]
   deps = [
+    "../intentive:intentive_views",
     "//base:i18n",
     "//build:branding_buildflags",
     "//cc/paint",

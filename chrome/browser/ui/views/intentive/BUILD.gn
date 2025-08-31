@@ -16,5 +16,9 @@ source_set("intentive_views") {
     "//content/public/common"
   ]
 
-  visibility = [ "//chrome/browser/ui/views:*" ]
+  # Allow toolbar target in subdirectory to depend on this.
+  visibility = [
+    "//chrome/browser/ui/views:*",
+    "//chrome/browser/ui/views/toolbar:*",
+  ]
 }
