@@ -56,6 +56,7 @@ class IntentiveSidebarView : public views::View {
     void OnAppPressed(const IntentiveAppEntry& entry);
     void OnAddPressed();
     void OnAppAdded(std::string name, GURL url);
+    void PersistAppsIfPossible();
     void LoadButtonIconForUrl(views::LabelButton* button, const GURL& url);
 
     raw_ptr<Browser> browser_ = nullptr;

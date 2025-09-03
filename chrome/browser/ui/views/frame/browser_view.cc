@@ -198,6 +198,8 @@
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/intentive/intentive_prefs.h"
+#include "components/prefs/pref_service.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/branded_strings.h"
 #include "chrome/grit/generated_resources.h"
@@ -1081,13 +1083,23 @@ BrowserView::BrowserView(std::unique_ptr<Browser> browser)
   intentive_sidebar_view_->SetVisible(true);
   intentive_sidebar_view_->SetBrowser(browser_.get());
 
-  // Set initial apps for the sidebar
-  intentive_sidebar_view_->SetApps({
-      {"Gmail",    GURL("https://mail.google.com/"), 0},
-      {"Calendar", GURL("https://calendar.google.com/"), 0},
-      {"ChatGPT",  GURL("https://chatgpt.com/"), 0},
-      {"Slack",    GURL("https://app.slack.com/"), 0},
-  });
+  // Set initial apps for the sidebar only if no apps are persisted in prefs.
+  // This avoids overwriting user-added apps on browser restart.
+  {
+    // Pref key declared in chrome/common/intentive/intentive_prefs.h
+    // and registered in chrome/browser/prefs/browser_prefs.cc.
+    const PrefService* prefs = GetProfile()->GetPrefs();
+    const base::Value::List& saved_apps =
+        prefs->GetList(intentive::kIntentiveSidebarApps);
+    if (saved_apps.empty()) {
+      intentive_sidebar_view_->SetApps({
+          {"Gmail",    GURL("https://mail.google.com/"), 0},
+          {"Calendar", GURL("https://calendar.google.com/"), 0},
+          {"ChatGPT",  GURL("https://chatgpt.com/"), 0},
+          {"Slack",    GURL("https://app.slack.com/"), 0},
+      });
+    }
+  }
 
   intentive_sidebar_view_->SetBackground(
     views::CreateSolidBackground(SkColorSetARGB(200, 30, 30, 30)));

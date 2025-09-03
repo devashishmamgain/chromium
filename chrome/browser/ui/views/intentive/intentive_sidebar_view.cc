@@ -39,6 +39,10 @@
 #include "ui/gfx/image/image_skia_operations.h"
 #include "skia/ext/image_operations.h"
 
+// Prefs for persistence
+#include "components/prefs/pref_service.h"
+#include "chrome/common/intentive/intentive_prefs.h"
+
 namespace {
 class AddAppDialog : public views::DialogDelegate {
  public:
@@ -110,6 +114,22 @@ namespace {
 constexpr int kAppIconSizeDip = 24;      // Slightly larger than default 16px
 constexpr int kAppRowMinHeightDip = 36;  // Comfortable hit target
 }  // namespace
+
+void IntentiveSidebarView::PersistAppsIfPossible() {
+  if (!browser_ || !browser_->profile())
+    return;
+  base::Value::List out;
+  for (const auto& a : apps_) {
+    if (!a.url.is_valid())
+      continue;
+    base::Value::Dict d;
+    d.Set("name", a.name);
+    d.Set("url", a.url.spec());
+    out.Append(std::move(d));
+  }
+  browser_->profile()->GetPrefs()->SetList(intentive::kIntentiveSidebarApps,
+                                           std::move(out));
+}
 
 IntentiveSidebarView::IntentiveSidebarView(
   NavigationCallback navigation_callback, int width_dip)
@@ -198,6 +218,7 @@ IntentiveSidebarView::~IntentiveSidebarView() = default;
 void IntentiveSidebarView::SetApps(std::vector<IntentiveAppEntry> apps) {
   apps_ = std::move(apps);
   Rebuild();
+  PersistAppsIfPossible();
 }
 
 gfx::Size IntentiveSidebarView::CalculatePreferredSize(
@@ -282,18 +303,7 @@ void IntentiveSidebarView::OnAddPressed() {
 
 void IntentiveSidebarView::OnAppAdded(std::string name, GURL url) {
   apps_.push_back(IntentiveAppEntry{std::move(name), std::move(url), 0});
-  // Persist to prefs if available.
-  if (browser_ && browser_->profile()) {
-    base::Value::List out;
-    for (const auto& a : apps_) {
-      base::Value::Dict d;
-      d.Set("name", a.name);
-      d.Set("url", a.url.spec());
-      out.Append(std::move(d));
-    }
-    browser_->profile()->GetPrefs()->SetList(intentive::kIntentiveSidebarApps,
-                                             std::move(out));
-  }
+  PersistAppsIfPossible();
   Rebuild();
 }
 
