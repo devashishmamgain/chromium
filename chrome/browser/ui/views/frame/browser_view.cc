@@ -200,6 +200,9 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/intentive/intentive_prefs.h"
 #include "components/prefs/pref_service.h"
+// For Navigate/NavigateParams used by Intentive sidebar app navigation.
+#include "chrome/browser/ui/browser_navigator.h"
+#include "chrome/browser/ui/browser_navigator_params.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/branded_strings.h"
 #include "chrome/grit/generated_resources.h"
@@ -1070,13 +1073,18 @@ BrowserView::BrowserView(std::unique_ptr<Browser> browser)
 
   auto nav_cb = base::BindRepeating(
       [](BrowserView* bv, const GURL& target_url) {
-        if (!bv || !bv->intentive_app_overlay_)
+        if (!bv)
           return;
-        // Show the overlay and the requested app view.
-        bv->lens_overlay_view_->SetVisible(true);
-        bv->intentive_app_overlay_->ShowApp(target_url);
+        // Navigate the current tab so the omnibox reflects the app URL.
+        NavigateParams params(bv->browser_.get(), target_url,
+                              ui::PAGE_TRANSITION_LINK);
+        params.disposition = WindowOpenDisposition::CURRENT_TAB;
+        Navigate(&params);
+        // Ensure any overlay is hidden so tab content is visible.
+        if (bv->lens_overlay_view_)
+          bv->lens_overlay_view_->SetVisible(false);
       },
-      this);
+      base::Unretained(this));
 
   intentive_sidebar_view_ = AddChildView(
       std::make_unique<IntentiveSidebarView>(nav_cb, /*width_dip=*/64));
