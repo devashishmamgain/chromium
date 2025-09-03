@@ -1073,16 +1073,11 @@ BrowserView::BrowserView(std::unique_ptr<Browser> browser)
 
   auto nav_cb = base::BindRepeating(
       [](BrowserView* bv, const GURL& target_url) {
-        if (!bv)
+        if (!bv || !bv->intentive_app_overlay_)
           return;
-        // Navigate the current tab so the omnibox reflects the app URL.
-        NavigateParams params(bv->browser_.get(), target_url,
-                              ui::PAGE_TRANSITION_LINK);
-        params.disposition = WindowOpenDisposition::CURRENT_TAB;
-        Navigate(&params);
-        // Ensure any overlay is hidden so tab content is visible.
-        if (bv->lens_overlay_view_)
-          bv->lens_overlay_view_->SetVisible(false);
+        // Show the overlay and the requested app view without creating tabs.
+        bv->lens_overlay_view_->SetVisible(true);
+        bv->intentive_app_overlay_->ShowApp(target_url);
       },
       base::Unretained(this));
 
