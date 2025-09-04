@@ -42,6 +42,9 @@
 // Prefs for persistence
 #include "components/prefs/pref_service.h"
 #include "chrome/common/intentive/intentive_prefs.h"
+// Context menu helpers
+#include "ui/base/class_property.h"
+#include "ui/views/controls/menu/menu_runner.h"
 
 namespace {
 class AddAppDialog : public views::DialogDelegate {
@@ -113,6 +116,15 @@ END_METADATA
 namespace {
 constexpr int kAppIconSizeDip = 24;      // Slightly larger than default 16px
 constexpr int kAppRowMinHeightDip = 36;  // Comfortable hit target
+}  // namespace
+
+// Per-button property to track its app index for context menu commands.
+DEFINE_UI_CLASS_PROPERTY_KEY(int, kIntentiveAppIndexKey, -1)
+
+namespace {
+enum MenuCommandId {
+  kRemoveApp = 1,
+};
 }  // namespace
 
 void IntentiveSidebarView::PersistAppsIfPossible() {
@@ -255,6 +267,8 @@ void IntentiveSidebarView::Rebuild() {
     btn->SetMinSize(gfx::Size(0, kAppRowMinHeightDip));
     btn->SetImageLabelSpacing(8);
     btn->SetImageCentered(true);
+    btn->SetProperty(kIntentiveAppIndexKey, static_cast<int>(i));
+    btn->set_context_menu_controller(this);
     // Set a default favicon first, then fetch real one asynchronously.
     gfx::Image default_favicon = favicon::GetDefaultFavicon();
     const gfx::ImageSkia* default_skia = default_favicon.ToImageSkia();
@@ -345,4 +359,56 @@ void IntentiveSidebarView::LoadButtonIconForUrl(views::LabelButton* button,
           },
           base::Unretained(button)),
       favicon_task_tracker_.get());
+}
+
+void IntentiveSidebarView::RemoveAppAt(int index) {
+  if (index < 0 || index >= static_cast<int>(apps_.size()))
+    return;
+  apps_.erase(apps_.begin() + index);
+  if (selected_index_ >= static_cast<int>(apps_.size()))
+    selected_index_ = static_cast<int>(apps_.size()) - 1;
+  PersistAppsIfPossible();
+  Rebuild();
+}
+
+void IntentiveSidebarView::ShowContextMenuForViewImpl(
+    views::View* source,
+    const gfx::Point& point,
+    ui::mojom::MenuSourceType source_type) {
+  context_menu_app_index_ = source->GetProperty(kIntentiveAppIndexKey);
+  context_menu_model_ = std::make_unique<ui::SimpleMenuModel>(this);
+  context_menu_model_->AddItem(kRemoveApp, u"Remove");
+  context_menu_runner_ = std::make_unique<views::MenuRunner>(
+      context_menu_model_.get(), views::MenuRunner::CONTEXT_MENU);
+  views::Widget* widget = source->GetWidget();
+  if (!widget)
+    return;
+  gfx::Point screen_point = point;
+  views::View::ConvertPointToScreen(source, &screen_point);
+  context_menu_runner_->RunMenuAt(widget, nullptr,
+                                  gfx::Rect(screen_point, gfx::Size()),
+                                  views::MenuAnchorPosition::kTopLeft,
+                                  source_type);
+}
+
+bool IntentiveSidebarView::IsCommandIdEnabled(int command_id) const {
+  switch (command_id) {
+    case kRemoveApp:
+      return context_menu_app_index_ >= 0 &&
+             context_menu_app_index_ < static_cast<int>(apps_.size());
+  }
+  return false;
+}
+
+void IntentiveSidebarView::ExecuteCommand(int command_id, int event_flags) {
+  switch (command_id) {
+    case kRemoveApp: {
+      int index = context_menu_app_index_;
+      context_menu_app_index_ = -1;
+      RemoveAppAt(index);
+      break;
+    }
+    default:
+      break;
+  }
 }

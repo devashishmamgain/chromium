@@ -6,6 +6,8 @@
 #include "base/memory/raw_ptr.h"
 #include "chrome/browser/ui/browser.h"
 #include "ui/base/metadata/metadata_header_macros.h"
+#include "ui/menus/simple_menu_model.h"
+#include "ui/views/context_menu_controller.h"
 #include "ui/views/view.h"
 #include "url/gurl.h"
 #include <memory>
@@ -16,6 +18,7 @@ namespace views {
 class Textfield;
 class LabelButton;
 class ScrollView;
+class MenuRunner;
 }
 
 namespace base {
@@ -28,7 +31,9 @@ struct IntentiveAppEntry {
   int icon_id = 0;  // placeholder
 };
 
-class IntentiveSidebarView : public views::View {
+class IntentiveSidebarView : public views::View,
+                             public views::ContextMenuController,
+                             public ui::SimpleMenuModel::Delegate {
   public:
     // IMPORTANT: two-argument form (class, ancestor)
     METADATA_HEADER(IntentiveSidebarView, views::View)
@@ -57,7 +62,15 @@ class IntentiveSidebarView : public views::View {
     void OnAddPressed();
     void OnAppAdded(std::string name, GURL url);
     void PersistAppsIfPossible();
+    void RemoveAppAt(int index);
     void LoadButtonIconForUrl(views::LabelButton* button, const GURL& url);
+
+    // Context menu support
+    void ShowContextMenuForViewImpl(views::View* source,
+                                    const gfx::Point& point,
+                                    ui::mojom::MenuSourceType source_type) override;
+    bool IsCommandIdEnabled(int command_id) const override;
+    void ExecuteCommand(int command_id, int event_flags) override;
 
     raw_ptr<Browser> browser_ = nullptr;
     NavigationCallback navigation_callback_;
@@ -74,6 +87,11 @@ class IntentiveSidebarView : public views::View {
     int selected_index_ = -1;
 
     std::unique_ptr<base::CancelableTaskTracker> favicon_task_tracker_;
+
+    // Active context menu state
+    int context_menu_app_index_ = -1;
+    std::unique_ptr<ui::SimpleMenuModel> context_menu_model_;
+    std::unique_ptr<class views::MenuRunner> context_menu_runner_;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_INTENTIVE_INTENTIVE_SIDEBAR_VIEW_H_
