@@ -1073,11 +1073,35 @@ BrowserView::BrowserView(std::unique_ptr<Browser> browser)
 
   auto nav_cb = base::BindRepeating(
       [](BrowserView* bv, const GURL& target_url) {
-        if (!bv || !bv->intentive_app_overlay_)
+        if (!bv)
           return;
-        // Show the overlay and the requested app view without creating tabs.
-        bv->lens_overlay_view_->SetVisible(true);
-        bv->intentive_app_overlay_->ShowApp(target_url);
+        // Hide the overlay if visible; we will show content in a tab so the
+        // omnibox reflects the URL without reloading when switching.
+        if (bv->lens_overlay_view_)
+          bv->lens_overlay_view_->SetVisible(false);
+
+        // Prefer reusing an existing tab for this app (match by host) to
+        // preserve state like a normal tab switch.
+        TabStripModel* model = bv->browser_->tab_strip_model();
+        if (model) {
+          const std::string target_host = target_url.host();
+          for (int i = 0; i < model->count(); ++i) {
+            content::WebContents* wc = model->GetWebContentsAt(i);
+            if (!wc)
+              continue;
+            const GURL existing = wc->GetLastCommittedURL();
+            if (existing.is_valid() && existing.host() == target_host) {
+              model->ActivateTabAt(i);
+              return;
+            }
+          }
+        }
+
+        // Otherwise, open a new foreground tab for the app.
+        NavigateParams params(bv->browser_.get(), target_url,
+                              ui::PAGE_TRANSITION_LINK);
+        params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+        Navigate(&params);
       },
       base::Unretained(this));
 
@@ -1085,6 +1109,13 @@ BrowserView::BrowserView(std::unique_ptr<Browser> browser)
       std::make_unique<IntentiveSidebarView>(nav_cb, /*width_dip=*/64));
   intentive_sidebar_view_->SetVisible(true);
   intentive_sidebar_view_->SetBrowser(browser_.get());
+
+  // Hide the tab strip UI so app navigation doesn't show tabs, while still
+  // using tabs under the hood to update the omnibox and preserve state.
+  if (tabstrip_)
+    tabstrip_->SetVisible(false);
+  if (tab_strip_region_view_)
+    tab_strip_region_view_->SetVisible(false);
 
   // Set initial apps for the sidebar only if no apps are persisted in prefs.
   // This avoids overwriting user-added apps on browser restart.
