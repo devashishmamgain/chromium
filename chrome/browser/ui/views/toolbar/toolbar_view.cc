@@ -120,6 +120,7 @@
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/common/isolated_world_ids.h"
+#include "ui/views/view_utils.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/layout/flex_layout.h"
 #include "ui/views/layout/proposed_layout.h"
@@ -132,6 +133,9 @@
 #include "chrome/common/intentive/intentive_features.h"
 #include "chrome/browser/ui/views/intentive/intentive_chat_overlay.h"
 #include "ui/views/controls/button/label_button.h"
+// Vector icons for toolbar buttons.
+#include "chrome/app/vector_icons/vector_icons.h"
+#include "ui/base/models/image_model.h"
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
 #include "chrome/browser/recovery/recovery_install_global_error_factory.h"
@@ -507,8 +511,27 @@ void ToolbarView::Init() {
   if (base::FeatureList::IsEnabled(intentive::kIntentiveUI)) {
     auto cb = base::BindRepeating(&ToolbarView::OnCommandButtonPressed,
                                   base::Unretained(this));
+    // Use a ToolbarButton (icon-only) for consistent sizing and layout.
     command_button_ = container_view_->AddChildView(
-        std::make_unique<views::LabelButton>(cb, u"Command"));
+        std::make_unique<ToolbarButton>(cb));
+    command_button_->SetTooltipText(u"Cato");
+    // Set a vector icon for Cato (uses toolbar color tokens).
+    command_button_->SetImageModel(
+        views::Button::STATE_NORMAL,
+        ui::ImageModel::FromVectorIcon(kCatoIcon, kColorToolbarButtonIcon, 20));
+    command_button_->SetImageModel(
+        views::Button::STATE_HOVERED,
+        ui::ImageModel::FromVectorIcon(kCatoIcon,
+                                       kColorToolbarButtonIconHovered, 20));
+    command_button_->SetImageModel(
+        views::Button::STATE_PRESSED,
+        ui::ImageModel::FromVectorIcon(kCatoIcon,
+                                       kColorToolbarButtonIconPressed, 20));
+    command_button_->SetImageModel(
+        views::Button::STATE_DISABLED,
+        ui::ImageModel::FromVectorIcon(kCatoIcon,
+                                       kColorToolbarButtonIconDisabled, 20));
+
   }
   
   // Start global error services now so we set the icon on the menu correctly.
@@ -700,67 +723,15 @@ void ToolbarView::ShowBookmarkBubble(const GURL& url, bool already_bookmarked) {
 
 void ToolbarView::OnCommandButtonPressed() {
   if (!base::FeatureList::IsEnabled(intentive::kIntentiveUI)) return;
-  // Copy current tab's title, URL, and page text into the clipboard.
-  if (auto* contents = GetWebContents()) {
-    const GURL url = contents->GetURL();
-    const std::u16string title = contents->GetTitle();
-    std::u16string header = title;
-    if (!header.empty())
-      header.append(u"\n");
-    header.append(base::UTF8ToUTF16(url.spec()));
-    header.append(u"\n\n");
-
-    // Try to extract visible page text via an isolated world script.
-    if (auto* rfh = contents->GetPrimaryMainFrame()) {
-      const std::u16string js = uR"JS((function(){
-        try {
-          var sel = '';
-          try { sel = (window.getSelection && window.getSelection()) ? String(window.getSelection()) : ''; } catch(e) {}
-          var txt = '';
-          try { txt = document.body ? document.body.innerText : ''; } catch(e) {}
-          return {selected: sel, text: txt};
-        } catch (e) { return {error: String(e)}; }
-      })())JS";
-      rfh->ExecuteJavaScriptInIsolatedWorld(
-          js,
-          base::BindOnce(
-              [](std::u16string header, base::Value value) {
-                std::u16string out = std::move(header);
-                if (value.is_dict()) {
-                  const auto& dict = value.GetDict();
-                  if (const std::string* sel = dict.FindString("selected")) {
-                    if (!sel->empty()) {
-                      out.append(u"Selected Text:\n");
-                      out.append(base::UTF8ToUTF16(*sel));
-                      out.append(u"\n\n");
-                    }
-                  }
-                  if (const std::string* txt = dict.FindString("text")) {
-                    // Limit size to avoid huge clipboard entries.
-                    constexpr size_t kMaxChars = 20000u;
-                    std::u16string u16 = base::UTF8ToUTF16(*txt);
-                    if (u16.size() > kMaxChars)
-                      u16.resize(kMaxChars);
-                    out.append(u"Page Text:\n");
-                    out.append(u16);
-                  }
-                }
-                ui::ScopedClipboardWriter writer(ui::ClipboardBuffer::kCopyPaste);
-                writer.WriteText(out);
-              },
-              header),
-          content::ISOLATED_WORLD_ID_CONTENT_END);
-    } else {
-      // Fallback: write just title + URL.
-      ui::ScopedClipboardWriter writer(ui::ClipboardBuffer::kCopyPaste);
-      writer.WriteText(header);
-    }
+  // Toggle the ChatGPT overlay only. Use the in-overlay
+  // "Send Page to AI" button to scrape, paste, and send context.
+  if (auto* bv = BrowserView::GetBrowserViewForBrowser(browser_)) {
+    auto* container = bv->contents_container();
+    auto* profile = browser_->profile();
+    IntentiveChatOverlay::ShowOrToggle(container, profile);
   }
-  auto* bv = BrowserView::GetBrowserViewForBrowser(browser_);
-  auto* container = bv->contents_container();
-  auto* profile = browser_->profile();
-  IntentiveChatOverlay::ShowOrToggle(container, profile);
 }
+
 
 views::Button* ToolbarView::GetChromeLabsButton() const {
   return browser_->GetFeatures()
