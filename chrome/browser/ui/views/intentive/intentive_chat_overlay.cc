@@ -1,5 +1,6 @@
 #include "chrome/browser/ui/views/intentive/intentive_chat_overlay.h"
 
+#include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
@@ -7,18 +8,19 @@
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
-#include "ui/views/controls/button/label_button.h"
+#include "ui/base/clipboard/clipboard_buffer.h"
+#include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/views/background.h"
 #include "ui/base/ui_base_types.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/views/view_utils.h"
 #include "url/gurl.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/json/string_escape.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback.h"
 #include <functional>
-#include "base/functional/callback_helpers.h"
 #include <memory>
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/common/isolated_world_ids.h"
@@ -31,11 +33,14 @@ namespace {
 constexpr int kW = 420;
 constexpr int kH = 600;
 constexpr int kPadding = 16;
+constexpr size_t kPromptLogSampleSize = 256;
 }  // namespace
 
 // static
 views::Widget* IntentiveChatOverlay::ShowOrToggle(views::View* parent_view,
                                                   content::BrowserContext* context) {
+  if (!parent_view || !context)
+    return nullptr;
   // Check if there's already an existing widget for this parent view
   views::Widget* existing_widget = nullptr;
   auto widgets = views::Widget::GetAllOwnedWidgets(
@@ -59,7 +64,7 @@ views::Widget* IntentiveChatOverlay::ShowOrToggle(views::View* parent_view,
   }
 
   // No existing widget, create a new one
-  auto* overlay = new IntentiveChatOverlay(context, parent_view);
+  auto* overlay = new IntentiveChatOverlay(context);
   auto* widget = new views::Widget();
   
   views::Widget::InitParams params(
@@ -88,6 +93,8 @@ views::Widget* IntentiveChatOverlay::ShowOrToggle(views::View* parent_view,
 views::Widget* IntentiveChatOverlay::ShowOrEnsureVisible(
     views::View* parent_view,
     content::BrowserContext* context) {
+  if (!parent_view || !context)
+    return nullptr;
   views::Widget* existing_widget = nullptr;
   auto widgets = views::Widget::GetAllOwnedWidgets(
       parent_view->GetWidget()->GetNativeView());
@@ -113,9 +120,8 @@ views::Widget* IntentiveChatOverlay::ShowOrEnsureVisible(
   return IntentiveChatOverlay::ShowOrToggle(parent_view, context);
 }
 
-IntentiveChatOverlay::IntentiveChatOverlay(content::BrowserContext* context,
-                                           views::View* host_parent_view)
-    : browser_context_(context), host_parent_view_(host_parent_view) {
+IntentiveChatOverlay::IntentiveChatOverlay(content::BrowserContext* context)
+    : browser_context_(context) {
   SetUseDefaultFillLayout(false);
   // Add the content WebView first. Header is a separate child widget layered
   // above to ensure clickability over native content.
@@ -123,8 +129,6 @@ IntentiveChatOverlay::IntentiveChatOverlay(content::BrowserContext* context,
   web_view_->LoadInitialURL(GURL("https://chatgpt.com"));
   web_view_->SetPreferredSize(gfx::Size(kW, kH));
 
-  auto send_cb = base::BindRepeating(&IntentiveChatOverlay::OnSendPageToAI,
-                                     base::Unretained(this));
   // Header widget and button will be created on first layout/show.
 }
 
@@ -312,34 +316,33 @@ void IntentiveChatOverlay::TrySendPrompt(int attempt) {
   });
 }
 
-void IntentiveChatOverlay::OnSendPageToAI() {
-  if (!host_parent_view_)
+void IntentiveChatOverlay::RequestPageContext(
+    base::OnceCallback<void(std::u16string)> callback) {
+  base::OnceCallback<void(std::u16string)> cb = std::move(callback);
+  if (!page_context_provider_) {
+    LOG(WARNING) << "Intentive: page context request aborted (no provider).";
+    if (!cb.is_null())
+      std::move(cb).Run({});
     return;
+  }
 
-  // Find the active page WebContents under the host container.
-  std::function<views::WebView*(views::View*)> find_webview;
-  find_webview = [&find_webview](views::View* root) -> views::WebView* {
-    if (!root)
-      return nullptr;
-    if (auto* wv = views::AsViewClass<views::WebView>(root))
-      return wv;
-    for (views::View* child : root->children()) {
-      if (auto* found = find_webview(child))
-        return found;
-    }
-    return nullptr;
-  };
-
-  views::WebView* page_wv = find_webview(host_parent_view_);
-  if (!page_wv)
+  content::WebContents* tab = page_context_provider_.Run();
+  if (!tab) {
+    LOG(WARNING) << "Intentive: page context request aborted (no WebContents).";
+    if (!cb.is_null())
+      std::move(cb).Run({});
     return;
-  content::WebContents* tab = page_wv->GetWebContents();
-  if (!tab)
-    return;
+  }
   content::RenderFrameHost* rfh = tab->GetPrimaryMainFrame();
-  if (!rfh)
+  if (!rfh) {
+    LOG(WARNING) << "Intentive: page context request aborted (no primary frame).";
+    if (!cb.is_null())
+      std::move(cb).Run({});
     return;
+  }
 
+  LOG(INFO) << "Intentive: requesting page context for URL "
+            << tab->GetVisibleURL().spec();
 
   // Collector JS (see requirements).
   const std::u16string js = uR"JS((function () {
@@ -466,13 +469,12 @@ void IntentiveChatOverlay::OnSendPageToAI() {
   rfh->ExecuteJavaScriptInIsolatedWorld(
       js,
       base::BindOnce(
-          [](base::WeakPtr<IntentiveChatOverlay> self,
-             std::u16string tab_title, std::u16string tab_url16,
+          [](std::u16string tab_title, std::u16string tab_url16,
              std::function<std::string(const std::string&, size_t)> trim_fn,
+             base::OnceCallback<void(std::u16string)> callback,
              base::Value result) {
-            if (!self)
-              return;
-
+            LOG(INFO) << "Intentive: JS execution completed with result type "
+                      << static_cast<int>(result.type());
             std::u16string title_u16 = std::move(tab_title);
             std::u16string url_u16 = std::move(tab_url16);
             std::u16string lang_u16;
@@ -508,6 +510,8 @@ void IntentiveChatOverlay::OnSendPageToAI() {
                   frames.emplace_back(std::move(furl), std::move(ftitle), std::move(ftext));
                 }
               }
+            } else {
+              LOG(WARNING) << "Intentive: JS result was not dict.";
             }
 
             std::u16string prompt =
@@ -561,14 +565,62 @@ void IntentiveChatOverlay::OnSendPageToAI() {
 
             std::string prompt_utf8 = base::UTF16ToUTF8(prompt);
             prompt_utf8 = trim_fn(prompt_utf8, 50000u);
+            std::string sample = prompt_utf8.substr(0, kPromptLogSampleSize);
+            if (prompt_utf8.size() > kPromptLogSampleSize)
+              sample.append("...");
+            LOG(INFO) << "Intentive: collected page context (" << prompt_utf8.size()
+                      << " bytes). Sample: " << sample;
             std::u16string final_u16 = base::UTF8ToUTF16(prompt_utf8);
 
-            self->SetPromptText(final_u16);  // Do NOT auto-send.
+            if (!callback.is_null()) {
+              if (final_u16.empty()) {
+                LOG(WARNING)
+                    << "Intentive: page context callback providing empty string.";
+              }
+              std::move(callback).Run(std::move(final_u16));
+            }
           },
-          weak_ptr_factory_.GetWeakPtr(),
-          tab->GetTitle(), base::UTF8ToUTF16(tab_gurl.spec()),
-          std::function<std::string(const std::string&, size_t)>(utf8_safe_trim)),
+          tab_title, base::UTF8ToUTF16(tab_gurl.spec()),
+          std::function<std::string(const std::string&, size_t)>(utf8_safe_trim),
+          std::move(cb)),
       content::ISOLATED_WORLD_ID_CONTENT_END);
+}
+
+void IntentiveChatOverlay::CopyPageContextToClipboard() {
+  RequestPageContext(base::BindOnce([](std::u16string prompt) {
+    if (prompt.empty()) {
+      LOG(WARNING) << "Intentive: clipboard copy skipped (empty prompt).";
+      return;
+    }
+    LOG(INFO) << "Intentive: writing page context to clipboard (" << prompt.length()
+              << " characters).";
+    ui::ScopedClipboardWriter writer(ui::ClipboardBuffer::kCopyPaste);
+    writer.WriteText(prompt);
+  }));
+}
+
+void IntentiveChatOverlay::SetPageContextProvider(
+    base::RepeatingCallback<content::WebContents*()> provider) {
+  page_context_provider_ = std::move(provider);
+}
+
+void IntentiveChatOverlay::OnSendPageToAI() {
+  RequestPageContext(base::BindOnce(
+      [](base::WeakPtr<IntentiveChatOverlay> self, std::u16string prompt) {
+        if (!self) {
+          LOG(WARNING) << "Intentive: overlay destroyed before prompt could be applied.";
+          return;
+        }
+        if (prompt.empty()) {
+          LOG(WARNING) << "Intentive: skipping send because prompt is empty.";
+          return;
+        }
+        LOG(INFO) << "Intentive: sending page context to overlay (" << prompt.length()
+                  << " characters).";
+        self->SetPromptText(prompt);
+        self->SendPrompt();
+      },
+      weak_ptr_factory_.GetWeakPtr()));
 }
 
 void IntentiveChatOverlay::Layout(PassKey) {

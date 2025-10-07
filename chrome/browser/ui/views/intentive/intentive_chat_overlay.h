@@ -1,6 +1,7 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_INTENTIVE_INTENTIVE_CHAT_OVERLAY_H_
 #define CHROME_BROWSER_UI_VIEWS_INTENTIVE_INTENTIVE_CHAT_OVERLAY_H_
 
+#include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "ui/base/metadata/metadata_header_macros.h"
@@ -10,11 +11,11 @@ namespace views {
 class View;
 class WebView;
 class Widget;
-class LabelButton;
 }  // namespace views
 
 namespace content {
 class BrowserContext;
+class WebContents;
 }  // namespace content
 
 // Simple content view for the floating overlay. The Widget will own this view.
@@ -27,7 +28,7 @@ class IntentiveChatOverlay : public views::View {
 
   // Create or toggle the floating widget above |parent_view| and return its Widget.
   static views::Widget* ShowOrToggle(views::View* parent_view,
-                                   content::BrowserContext* context);
+                                     content::BrowserContext* context);
 
   // Ensure the overlay is visible: if it exists, show/focus it; otherwise
   // create it. Unlike ShowOrToggle, this never hides an already-visible
@@ -35,8 +36,7 @@ class IntentiveChatOverlay : public views::View {
   static views::Widget* ShowOrEnsureVisible(views::View* parent_view,
                                             content::BrowserContext* context);
 
-  explicit IntentiveChatOverlay(content::BrowserContext* context,
-                                views::View* host_parent_view);
+  explicit IntentiveChatOverlay(content::BrowserContext* context);
   ~IntentiveChatOverlay() override;
 
   // Set the chat input text inside the embedded ChatGPT page and focus it.
@@ -45,8 +45,12 @@ class IntentiveChatOverlay : public views::View {
   void SendPrompt();
   // Public entry to scrape active page, prepare context and send to AI.
   void SendPageToAI();
+  void CopyPageContextToClipboard();
+  void SetPageContextProvider(
+      base::RepeatingCallback<content::WebContents*()> provider);
 
  private:
+  void RequestPageContext(base::OnceCallback<void(std::u16string)> callback);
   void TrySetPromptText(const std::u16string& text, int attempt);
   void TrySendPrompt(int attempt);
   void OnSendPageToAI();
@@ -57,8 +61,7 @@ class IntentiveChatOverlay : public views::View {
   raw_ptr<content::BrowserContext> browser_context_ = nullptr;
   raw_ptr<views::WebView> web_view_ = nullptr;
   // No header/button inside overlay anymore; control is in toolbar.
-  // The container view from which we can find the active page WebContents.
-  raw_ptr<views::View> host_parent_view_ = nullptr;
+  base::RepeatingCallback<content::WebContents*()> page_context_provider_;
 
   base::WeakPtrFactory<IntentiveChatOverlay> weak_ptr_factory_{this};
 };

@@ -117,7 +117,6 @@
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/background.h"
 #include "ui/views/cascading_property.h"
-#include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/common/isolated_world_ids.h"
 #include "ui/views/view_utils.h"
@@ -723,12 +722,29 @@ void ToolbarView::ShowBookmarkBubble(const GURL& url, bool already_bookmarked) {
 
 void ToolbarView::OnCommandButtonPressed() {
   if (!base::FeatureList::IsEnabled(intentive::kIntentiveUI)) return;
-  // Toggle the ChatGPT overlay only. Use the in-overlay
-  // "Send Page to AI" button to scrape, paste, and send context.
+  // Ensure the overlay is visible, then copy the page context for pasting.
   if (auto* bv = BrowserView::GetBrowserViewForBrowser(browser_)) {
     auto* container = bv->contents_container();
-    auto* profile = browser_->profile();
-    IntentiveChatOverlay::ShowOrToggle(container, profile);
+    if (auto* widget = IntentiveChatOverlay::ShowOrToggle(container, browser_->profile())) {
+      if (!widget->IsVisible()) {
+        // Toggle request hid the overlay; skip prompting for context.
+        return;
+      }
+
+      if (auto* view = widget->GetContentsView()) {
+        if (auto* overlay = views::AsViewClass<IntentiveChatOverlay>(view)) {
+          overlay->SetPageContextProvider(base::BindRepeating(
+              [](Browser* browser) -> content::WebContents* {
+                if (!browser)
+                  return nullptr;
+                return browser->tab_strip_model()->GetActiveWebContents();
+              },
+              browser_));
+          // Immediately copy the current page context so the user can paste it.
+          overlay->CopyPageContextToClipboard();
+        }
+      }
+    }
   }
 }
 
