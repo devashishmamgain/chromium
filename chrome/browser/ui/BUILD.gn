@@ -5314,6 +5314,12 @@ static_library("ui") {
     ]
   }
 
+  # Intentive: build sidebar view here to avoid cycles.
+  sources += [
+    "views/intentive/intentive_sidebar_view.cc",
+    "views/intentive/intentive_app_overlay.cc",
+  ]
+
   if (enable_reporting) {
     deps += [ "//components/tpcd/enterprise_reporting" ]
   }

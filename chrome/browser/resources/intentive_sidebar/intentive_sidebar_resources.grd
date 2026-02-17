@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<grit base_dir="." latest_public_release="0" current_release="1">
+  <outputs>
+    <output filename="grit/intentive_sidebar_resources.h" type="header" />
+    <output filename="intentive_sidebar_resources.pak" type="pak" />
+  </outputs>
+  <release seq="1">
+    <includes>
+      <include name="IDR_INTENTIVE_SIDEBAR_HTML" file="intentive_sidebar/sidebar.html" type="BINDATA" />
+      <include name="IDR_INTENTIVE_SIDEBAR_JS" file="intentive_sidebar/sidebar.js" type="BINDATA" />
+      <include name="IDR_INTENTIVE_SIDEBAR_CSS" file="intentive_sidebar/sidebar.css" type="BINDATA" />
+    </includes>
+  </release>
+</grit>

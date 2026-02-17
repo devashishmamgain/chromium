@@ -718,9 +718,12 @@ int TabContainerImpl::GetAvailableWidthForTabContainer() const {
   // Falls back to views::View::GetAvailableSize() when
   // `available_width_callback_` is not defined, e.g. when tab scrolling is
   // disabled.
-  return available_width_callback_
-             ? available_width_callback_.Run()
-             : parent()->GetAvailableSize(this).width().value();
+  if (available_width_callback_)
+    return available_width_callback_.Run();
+
+  const views::SizeBound width_bound =
+      parent()->GetAvailableSize(this).width();
+  return width_bound.is_bounded() ? width_bound.value() : width();
 }
 
 void TabContainerImpl::EnterTabClosingMode(std::optional<int> override_width,

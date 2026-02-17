@@ -232,7 +232,9 @@ void TabStripScrollContainer::OnContentsScrolledCallback() {
 }
 
 int TabStripScrollContainer::GetTabStripAvailableWidth() const {
-  return overflow_view_->GetAvailableSize(scroll_view_).width().value();
+  const views::SizeBound width_bound =
+      overflow_view_->GetAvailableSize(scroll_view_).width();
+  return width_bound.is_bounded() ? width_bound.value() : scroll_view_->width();
 }
 
 void TabStripScrollContainer::ScrollTowardsLeadingTab() {

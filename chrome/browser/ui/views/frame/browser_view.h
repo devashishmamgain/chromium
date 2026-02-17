@@ -62,6 +62,8 @@
 #include "ui/views/widget/widget_observer.h"
 #include "ui/views/window/client_view.h"
 
+#include "chrome/browser/ui/views/intentive/intentive_sidebar_view.h"
+
 #if BUILDFLAG(IS_CHROMEOS)
 #include "ui/compositor/compositor_metrics_tracker.h"
 #endif
@@ -923,6 +925,14 @@ class BrowserView : public BrowserWindow,
   // Callback for the loading animation(s) associated with this view.
   void LoadingAnimationTimerCallback();
   void LoadingAnimationCallback(base::TimeTicks timestamp);
+
+  base::raw_ptr<IntentiveSidebarView> intentive_sidebar_view_ = nullptr;
+  base::raw_ptr<class IntentiveAppOverlay> intentive_app_overlay_ = nullptr;
+
+  void ToggleIntentiveSidebar();
+  IntentiveSidebarView* intentive_sidebar_view() { 
+    return intentive_sidebar_view_; 
+  }
 
 #if BUILDFLAG(IS_WIN)
   // Creates the JumpList.

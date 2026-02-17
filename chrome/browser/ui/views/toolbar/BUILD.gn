@@ -67,6 +67,10 @@ source_set("toolbar") {
     "toolbar_view.cc",
     "toolbar_view.h",
   ]
+
+  # Use the Intentive overlay from the intentive_views source set to avoid
+  # duplicate symbols. Added to deps list below.
+  
   public_deps = [
     "//base",
     "//build:buildflag_header_h",
@@ -97,6 +101,7 @@ source_set("toolbar") {
     "//url",
   ]
   deps = [
+    "../intentive:intentive_views",
     "//base:i18n",
     "//build:branding_buildflags",
     "//cc/paint",

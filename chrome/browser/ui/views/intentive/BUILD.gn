@@ -1,0 +1,24 @@
+# chrome/browser/ui/views/intentive/BUILD.gn
+source_set("intentive_views") {
+  sources = [
+    "intentive_chat_overlay.cc",
+  ]
+
+  deps = [
+    "//base",
+    "//content/public/browser",        # for WebView/browser context
+    "//ui/base",
+    "//ui/gfx",
+    "//ui/views",
+    "//ui/views/controls/webview",     # views::WebView in chat overlay
+    "//url",
+    "//content/public/browser",
+    "//content/public/common"
+  ]
+
+  # Allow toolbar target in subdirectory to depend on this.
+  visibility = [
+    "//chrome/browser/ui/views:*",
+    "//chrome/browser/ui/views/toolbar:*",
+  ]
+}

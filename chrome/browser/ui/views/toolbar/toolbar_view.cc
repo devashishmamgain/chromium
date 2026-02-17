@@ -18,6 +18,7 @@
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/values.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -116,6 +117,9 @@
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/background.h"
 #include "ui/views/cascading_property.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/common/isolated_world_ids.h"
+#include "ui/views/view_utils.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/layout/flex_layout.h"
 #include "ui/views/layout/proposed_layout.h"
@@ -124,6 +128,13 @@
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/non_client_view.h"
+
+#include "chrome/common/intentive/intentive_features.h"
+#include "chrome/browser/ui/views/intentive/intentive_chat_overlay.h"
+#include "ui/views/controls/button/label_button.h"
+// Vector icons for toolbar buttons.
+#include "chrome/app/vector_icons/vector_icons.h"
+#include "ui/base/models/image_model.h"
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
 #include "chrome/browser/recovery/recovery_install_global_error_factory.h"
@@ -496,6 +507,32 @@ void ToolbarView::Init() {
 
   LoadImages();
 
+  if (base::FeatureList::IsEnabled(intentive::kIntentiveUI)) {
+    auto cb = base::BindRepeating(&ToolbarView::OnCommandButtonPressed,
+                                  base::Unretained(this));
+    // Use a ToolbarButton (icon-only) for consistent sizing and layout.
+    command_button_ = container_view_->AddChildView(
+        std::make_unique<ToolbarButton>(cb));
+    command_button_->SetTooltipText(u"Cato");
+    // Set a vector icon for Cato (uses toolbar color tokens).
+    command_button_->SetImageModel(
+        views::Button::STATE_NORMAL,
+        ui::ImageModel::FromVectorIcon(kCatoIcon, kColorToolbarButtonIcon, 20));
+    command_button_->SetImageModel(
+        views::Button::STATE_HOVERED,
+        ui::ImageModel::FromVectorIcon(kCatoIcon,
+                                       kColorToolbarButtonIconHovered, 20));
+    command_button_->SetImageModel(
+        views::Button::STATE_PRESSED,
+        ui::ImageModel::FromVectorIcon(kCatoIcon,
+                                       kColorToolbarButtonIconPressed, 20));
+    command_button_->SetImageModel(
+        views::Button::STATE_DISABLED,
+        ui::ImageModel::FromVectorIcon(kCatoIcon,
+                                       kColorToolbarButtonIconDisabled, 20));
+
+  }
+  
   // Start global error services now so we set the icon on the menu correctly.
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
   RecoveryInstallGlobalErrorFactory::GetForProfile(browser_->profile());
@@ -682,6 +719,35 @@ void ToolbarView::ShowBookmarkBubble(const GURL& url, bool already_bookmarked) {
                                  bookmark_star_icon, browser_, url,
                                  already_bookmarked);
 }
+
+void ToolbarView::OnCommandButtonPressed() {
+  if (!base::FeatureList::IsEnabled(intentive::kIntentiveUI)) return;
+  // Ensure the overlay is visible, then copy the page context for pasting.
+  if (auto* bv = BrowserView::GetBrowserViewForBrowser(browser_)) {
+    auto* container = bv->contents_container();
+    if (auto* widget = IntentiveChatOverlay::ShowOrToggle(container, browser_->profile())) {
+      if (!widget->IsVisible()) {
+        // Toggle request hid the overlay; skip prompting for context.
+        return;
+      }
+
+      if (auto* view = widget->GetContentsView()) {
+        if (auto* overlay = views::AsViewClass<IntentiveChatOverlay>(view)) {
+          overlay->SetPageContextProvider(base::BindRepeating(
+              [](Browser* browser) -> content::WebContents* {
+                if (!browser)
+                  return nullptr;
+                return browser->tab_strip_model()->GetActiveWebContents();
+              },
+              browser_));
+          // Immediately copy the current page context so the user can paste it.
+          overlay->CopyPageContextToClipboard();
+        }
+      }
+    }
+  }
+}
+
 
 views::Button* ToolbarView::GetChromeLabsButton() const {
   return browser_->GetFeatures()

@@ -4,13 +4,13 @@
 
 #include "chrome/browser/ui/views/frame/browser_view.h"
 
-#include <stdint.h>
-
 #include <algorithm>
 #include <memory>
 #include <optional>
 #include <set>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "base/byte_count.h"
 #include "base/check.h"
@@ -139,6 +139,7 @@
 #include "chrome/browser/ui/views/frame/vertical_tab_strip_region_view.h"
 #include "chrome/browser/ui/views/frame/web_contents_close_handler.h"
 #include "chrome/browser/ui/views/fullscreen_control/fullscreen_control_host.h"
+#include "chrome/browser/ui/views/intentive/intentive_app_overlay.h"
 #include "chrome/browser/ui/views/global_media_controls/media_toolbar_button_view.h"
 #include "chrome/browser/ui/views/hats/hats_next_web_dialog.h"
 #include "chrome/browser/ui/views/incognito_clear_browsing_data_dialog_coordinator.h"
@@ -197,6 +198,11 @@
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/intentive/intentive_prefs.h"
+#include "components/prefs/pref_service.h"
+// For Navigate/NavigateParams used by Intentive sidebar app navigation.
+#include "chrome/browser/ui/browser_navigator.h"
+#include "chrome/browser/ui/browser_navigator_params.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/branded_strings.h"
 #include "chrome/grit/generated_resources.h"
@@ -249,6 +255,7 @@
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/navigation_controller.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/drop_data.h"
 #include "extensions/common/command.h"
@@ -306,6 +313,13 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
 #include "ui/views/window/hit_test_utils.h"
+
+
+#include "chrome/browser/ui/browser_navigator_params.h"
+#include "ui/base/page_transition_types.h"
+#include "chrome/browser/ui/views/intentive/intentive_sidebar_view.h"
+
+
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "ash/constants/ash_switches.h"
@@ -366,6 +380,7 @@
 #include "chrome/browser/glic/widget/glic_widget.h"
 #include "chrome/browser/glic/widget/glic_window_controller.h"
 #endif
+
 
 using base::UserMetricsAction;
 using content::WebContents;
@@ -997,6 +1012,10 @@ BrowserView::BrowserView(std::unique_ptr<Browser> browser)
   lens_overlay_view_ =
       contents_container->AddChildView(std::move(lens_overlay_view));
 
+  // Intentive: add an overlay for app WebViews inside the lens overlay layer.
+  intentive_app_overlay_ = lens_overlay_view_->AddChildView(
+      std::make_unique<IntentiveAppOverlay>(browser_->profile()));
+
   contents_container->SetLayoutManager(std::make_unique<ContentsLayoutManager>(
       contents_view, lens_overlay_view_));
 
@@ -1050,6 +1069,75 @@ BrowserView::BrowserView(std::unique_ptr<Browser> browser)
   find_bar_host_view_ = AddChildView(std::make_unique<View>());
 
   window_scrim_view_ = AddChildView(std::make_unique<ScrimView>());
+
+
+  auto nav_cb = base::BindRepeating(
+      [](BrowserView* bv, const GURL& target_url) {
+        if (!bv)
+          return;
+        // Hide the overlay if visible; we will show content in a tab so the
+        // omnibox reflects the URL without reloading when switching.
+        if (bv->lens_overlay_view_)
+          bv->lens_overlay_view_->SetVisible(false);
+
+        // Prefer reusing an existing tab for this app (match by host) to
+        // preserve state like a normal tab switch.
+        TabStripModel* model = bv->browser_->tab_strip_model();
+        if (model) {
+          const std::string target_host = target_url.host();
+          for (int i = 0; i < model->count(); ++i) {
+            content::WebContents* wc = model->GetWebContentsAt(i);
+            if (!wc)
+              continue;
+            const GURL existing = wc->GetLastCommittedURL();
+            if (existing.is_valid() && existing.host() == target_host) {
+              model->ActivateTabAt(i);
+              return;
+            }
+          }
+        }
+
+        // Otherwise, open a new foreground tab for the app.
+        NavigateParams params(bv->browser_.get(), target_url,
+                              ui::PAGE_TRANSITION_LINK);
+        params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+        Navigate(&params);
+      },
+      base::Unretained(this));
+
+  intentive_sidebar_view_ = AddChildView(
+      std::make_unique<IntentiveSidebarView>(nav_cb, /*width_dip=*/64));
+  intentive_sidebar_view_->SetVisible(true);
+  intentive_sidebar_view_->SetBrowser(browser_.get());
+
+  // Hide the tab strip UI so app navigation doesn't show tabs, while still
+  // using tabs under the hood to update the omnibox and preserve state.
+  if (tabstrip_)
+    tabstrip_->SetVisible(false);
+  if (tab_strip_region_view_)
+    tab_strip_region_view_->SetVisible(false);
+
+  // Set initial apps for the sidebar only if no apps are persisted in prefs.
+  // This avoids overwriting user-added apps on browser restart.
+  {
+    // Pref key declared in chrome/common/intentive/intentive_prefs.h
+    // and registered in chrome/browser/prefs/browser_prefs.cc.
+    const PrefService* prefs = GetProfile()->GetPrefs();
+    const base::Value::List& saved_apps =
+        prefs->GetList(intentive::kIntentiveSidebarApps);
+    if (saved_apps.empty()) {
+      intentive_sidebar_view_->SetApps({
+          {"Gmail",    GURL("https://mail.google.com/"), 0},
+          {"Calendar", GURL("https://calendar.google.com/"), 0},
+          {"ChatGPT",  GURL("https://chatgpt.com/"), 0},
+          {"Slack",    GURL("https://app.slack.com/"), 0},
+      });
+    }
+  }
+
+  intentive_sidebar_view_->SetBackground(
+    views::CreateSolidBackground(SkColorSetARGB(200, 30, 30, 30)));
+  
   window_scrim_view_->layer()->SetName("WindowScrimView");
 
 #if BUILDFLAG(IS_WIN)
@@ -1323,6 +1411,16 @@ bool BrowserView::GetGuestSession() const {
 bool BrowserView::GetRegularOrGuestSession() const {
   return profiles::IsRegularOrGuestSession(browser_.get());
 }
+
+void BrowserView::ToggleIntentiveSidebar() {
+  if (!intentive_sidebar_view_) {
+    return;
+  }
+  intentive_sidebar_view_->SetVisible(!intentive_sidebar_view_->GetVisible());
+  InvalidateLayout();                     // mark for relayout
+  if (auto* w = GetWidget()) w->LayoutRootViewIfNecessary();  // force now
+}
+
 
 bool BrowserView::GetAccelerator(int cmd_id,
                                  ui::Accelerator* accelerator) const {
@@ -5043,7 +5141,7 @@ gfx::Size BrowserView::GetMinimumSize() const {
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserView, views::View overrides:
 
-void BrowserView::Layout(PassKey) {
+void BrowserView::Layout(PassKey pass_key) {
   TRACE_EVENT0("ui", "BrowserView::Layout");
   if (!initialized_ || in_process_fullscreen_) {
     return;
@@ -5087,6 +5185,13 @@ void BrowserView::Layout(PassKey) {
     user_education->help_bubble_factory_registry().NotifyAnchorBoundsChanged(
         GetElementContext());
   }
+
+  // Left sidebar is now laid out by BrowserViewLayout.
+
+  // ... rest of the code remains the same ...
+  //   // contents_container_ in InitViews(), its z-order should already be fine.
+  // }
+
 }
 
 void BrowserView::OnGestureEvent(ui::GestureEvent* event) {
@@ -5203,6 +5308,8 @@ void BrowserView::AddedToWidget() {
           left_aligned_side_panel_separator_, unified_side_panel_,
           right_aligned_side_panel_separator_, side_panel_rounded_corner_,
           contents_separator_));
+  // Inform the layout of the left sidebar so it can reserve space for it.
+  browser_view_layout->set_intentive_sidebar_view(intentive_sidebar_view_);
   browser_view_layout->SetUseBrowserContentMinimumSize(
       ShouldUseBrowserContentMinimumSize());
 
@@ -5320,6 +5427,13 @@ void BrowserView::OnDragEntered(const ui::DropTargetEvent& event) {
 
 bool BrowserView::AcceleratorPressed(const ui::Accelerator& accelerator) {
   int command_id;
+
+  if (accelerator.key_code() == ui::VKEY_L &&
+      accelerator.modifiers() == (ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN)) {
+    ToggleIntentiveSidebar();
+    return true;
+  }
+
   // Though AcceleratorManager should not send unknown |accelerator| to us, it's
   // still possible the command cannot be executed now.
   if (!FindCommandIdForAccelerator(accelerator, &command_id)) {
@@ -5914,6 +6028,7 @@ void BrowserView::MaybeShowSupervisedUserProfileSignInIPH() {
 }
 
 void BrowserView::ShowHatsDialog(
+   
     const std::string& site_id,
     const std::optional<std::string>& hats_histogram_name,
     const std::optional<uint64_t> hats_survey_ukm_id,

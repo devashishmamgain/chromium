@@ -26,6 +26,7 @@
 #include "chrome/browser/ui/webui/about/about_ui.h"
 #include "chrome/browser/ui/webui/components/components_ui.h"
 #include "chrome/browser/ui/webui/crashes/crashes_ui.h"
+#include "chrome/browser/ui/webui/intentive_sidebar/intentive_sidebar.h"
 #include "chrome/browser/ui/webui/download_internals/download_internals_ui.h"
 #include "chrome/browser/ui/webui/flags/flags_ui.h"
 #include "chrome/common/buildflags.h"
@@ -85,6 +86,7 @@
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image_skia_rep.h"
 #endif  // BUILDFLAG(IS_ANDROID)
+
 
 #if BUILDFLAG(ENABLE_DEVTOOLS_FRONTEND)
 #include "chrome/browser/devtools/devtools_ui_bindings.h"
@@ -168,6 +170,9 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
                                              const GURL& url) {
   // This will get called a lot to check all URLs, so do a quick check of other
   // schemes to filter out most URLs.
+  if (url.host() == "intentive-sidebar") {
+    return &NewWebUI<IntentiveSidebarUI>;
+  }
 #if BUILDFLAG(ENABLE_DEVTOOLS_FRONTEND)
   if (!url.SchemeIs(content::kChromeDevToolsScheme)) {
     return nullptr;
